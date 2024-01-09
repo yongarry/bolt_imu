@@ -13,11 +13,11 @@ int main(int argc, char **argv) {
     ros::init(argc, argv, "sensor_manager");
     ros::NodeHandle nh_;
     ros::Publisher imu_pub;
-    ros::Subscriber imu_pub;
+    ros::Subscriber gui_command_sub_;
     mscl::Connection con_;
     bool imu_ok = true;
     imu_pub = nh_.advertise<sensor_msgs::Imu>("/bolt/imu", 100);
-    gui_command_sub_ = nh_.subscribe("/bolt/command", 100, &GuiCommandCallback, this);
+    gui_command_sub_ = nh_.subscribe("/bolt/command", 100, GuiCommandCallback);
 
     try
     {
