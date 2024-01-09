@@ -21,6 +21,7 @@ int main(int argc, char **argv) {
 
     try
     {
+        system("sudo chmod 666 /dev/ttyACM0");
         con_ = mscl::Connection::Serial("/dev/ttyACM0", 115200);
     }
     catch (mscl::Error &err)
