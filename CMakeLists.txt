@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   tf2
   tf2_ros
+  dyros_bolt_lib
 )
 
 catkin_package(

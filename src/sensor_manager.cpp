@@ -1,7 +1,21 @@
 #include "sensor_manager.h"
 #include <signal.h>
 
-void GuiCommandCallback(const std_msgs::StringConstPtr &msg)
+volatile bool *prog_shutdown;
+
+void SIGINT_handler(int sig)
+{
+    // std::cout << " SENSOR : shutdown Signal" << std::endl;
+    *prog_shutdown = true;
+}
+
+SensorManager::SensorManager()
+{
+    imu_pub = nh_.advertise<sensor_msgs::Imu>("/bolt/imu", 100);
+    gui_command_sub_ = nh_.subscribe("/bolt/command", 100, &SensorManager::GuiCommandCallback, this);
+}
+
+void SensorManager::GuiCommandCallback(const std_msgs::StringConstPtr &msg)
 {
     if (msg->data == "imureset")
     {
@@ -11,14 +25,15 @@ void GuiCommandCallback(const std_msgs::StringConstPtr &msg)
 
 int main(int argc, char **argv) {
     ros::init(argc, argv, "sensor_manager");
-    ros::NodeHandle nh_;
-    ros::Publisher imu_pub;
-    ros::Subscriber gui_command_sub_;
+
+    SensorManager sm_;
+
+    int shm_id_;
+    init_shm(shm_msg_key, shm_id_, &sm_.shm_);
+    prog_shutdown = &sm_.shm_->shutdown;
+
     mscl::Connection con_;
     bool imu_ok = true;
-    imu_pub = nh_.advertise<sensor_msgs::Imu>("/bolt/imu", 100);
-    gui_command_sub_ = nh_.subscribe("/bolt/command", 100, GuiCommandCallback);
-
     try
     {
         system("sudo chmod 666 /dev/ttyACM0");
@@ -42,7 +57,10 @@ int main(int argc, char **argv) {
 
         auto t_begin = std::chrono::steady_clock::now();
 
-        while (ros::ok())
+        sm_.shm_->imu_state = 0;
+
+        while (!sm_.shm_->shutdown && ros::ok())
+        // while (ros::ok())
         {
             ros::spinOnce();
 
@@ -50,10 +68,10 @@ int main(int argc, char **argv) {
 
             // if signal_ imu reset
 
-            if (imu_reset_signal_)
+            if (sm_.imu_reset_signal_)
             {
                 mx5.resetEFIMU();
-                imu_reset_signal_ = false;
+                sm_.imu_reset_signal_ = false;
             }
 
             int imu_state__;
@@ -69,8 +87,23 @@ int main(int argc, char **argv) {
             {
                 yes_imu_count++;
                 mx5.checkIMUData();
+                sm_.shm_->imuWriting = true;
+                sm_.shm_->imu_state = imu_state__;
+                // std::cout<< "imu_state__: " << imu_state__<<std::endl;
+                sm_.shm_->pos_virtual[0] = imu_msg.orientation.x;
+                sm_.shm_->pos_virtual[1] = imu_msg.orientation.y;
+                sm_.shm_->pos_virtual[2] = imu_msg.orientation.z;
+                sm_.shm_->pos_virtual[3] = imu_msg.orientation.w;
+                sm_.shm_->vel_virtual[0] = imu_msg.angular_velocity.x;
+                sm_.shm_->vel_virtual[1] = imu_msg.angular_velocity.y;
+                sm_.shm_->vel_virtual[2] = imu_msg.angular_velocity.z;
+                sm_.shm_->imu_acc[0] = imu_msg.linear_acceleration.x;
+                sm_.shm_->imu_acc[1] = imu_msg.linear_acceleration.y;
+                sm_.shm_->imu_acc[2] = imu_msg.linear_acceleration.z;
+                // std::cout<<shm_->pos_virtual[3]<<shm_->pos_virtual[4]<<shm_->pos_virtual[5]<<shm_->pos_virtual[6]<<std::endl;
 
-                imu_pub.publish(imu_msg);
+                sm_.imu_pub.publish(imu_msg);
+                sm_.shm_->imuWriting = false;
             }
 
             if ((cycle_count % 1000) == 0)
@@ -89,6 +122,7 @@ int main(int argc, char **argv) {
         std::cout << "imu end" << std::endl;
         mx5.endIMU();
     }
+    deleteSharedMemory(shm_id_, sm_.shm_);
 
     return 0;
 }
